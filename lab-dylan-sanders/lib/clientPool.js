@@ -1,45 +1,68 @@
-const EventEmitter = require('events');
-var EE = new EventEmitter();
+'use strict';
+const EventEmitter = require('events').EventEmitter;
 
-function ClientPool() {
-  this.pool = {};
-  this.ee = EE;
+function register(clientPool, socket) {
+  socket.userSocket = {};
+  socket.userSocket.user  = 'user_' + (Math.floor(Math.random() * (200000 - 10000)) + 10000);
+  socket.userSocket.id = (Math.floor(Math.random() * (10000 - 100)) + 100);
+  socket.userSocket.nickname = socket.userSocket.user;
+  socket.write('welcome to the server\n');
 
-  this.ee.on('register', function(socket) {
-    socket.id = (Math.floor(Math.random() * (10000 - 100)) + 100);
-    socket.user  = 'user_' + (Math.floor(Math.random() * (200000 - 10000)) + 10000);
-    this.pool[socket.id] = socket;
-    socket.write('welcome to the server\n');
+  socket.on('data', (data) => {
+    if (data.toString() === 'END\r\n') {
+      // socket.write('disconnected');
+      clientPool.ee.emit('close', socket, data);
+      socket.emit('close');
+    } else if (data.toString().indexOf('\\nick') !== 0) {
+      clientPool.ee.emit('broadcast', socket, data);
+    } else {
+      clientPool.ee.emit('nickname', socket, data);
+    }
+  });
 
-    this.ee.on('data', function(data) {
-      this.ee.emit('broadcast', data);
-    });
+  socket.on('error', (err) => {
+    console.log('error:' + err.message);
+  });
 
-
-    this.ee.on('error', function(error) {
-      console.log(error);
-    });
-
-    this.ee.on('close', function() {
-      delete ClientPool.pool[this.id];
-      this.end();
-      console.log('disconnected from server');
-
-    });
-
-    this.ee.on('broadcast', function(msg) {
-      if (msg.toString() === 'END\r\n') {
-        this.ee.emit('close');
-      }
-      for (var s in ClientPool.pool) {
-        if (this !== s) {
-          s.write(s.user + ': ' + msg.toString());
-        }
-      }
-    });
-
-  }.bind(this));
-
+  socket.on('close', () => {
+    clientPool.ee.emit('close', socket);
+  });
+  clientPool.pool[socket.userSocket.id] = socket;
 }
+
+let ClientPool = module.exports = exports = function() {
+  this.pool = {};
+  this.ee = new EventEmitter();
+
+  this.ee.on('register', (socket) => {
+    register(this, socket);
+    // socket.write(socket.userSocket.id + ' has connected\n');
+    Object.keys(this.pool).forEach((client) => {
+      if(socket.userSocket.id !== client) {
+        // this.pool[client].write(socket.userSocket.nickname + ': has connected to server\n');
+      } else {
+        // socket.write('welcome to the server\n');
+      }
+    });
+  });
+
+  this.ee.on('error', (error) => {
+    console.log(error);
+  });
+
+  this.ee.on('close', (socket) => {
+    socket.end();
+    delete this.pool[socket.userSocket.id];
+    console.log('disconnected from server');
+  });
+
+  this.ee.on('broadcast', (socket, data) => {
+    let msg = data.toString();
+    Object.keys(this.pool).forEach((client)  => {
+      if (socket.userSocket.id !== client) this.pool[client].write(msg);
+    });
+  });
+};
+
 
 module.exports = ClientPool;
