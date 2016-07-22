@@ -21,7 +21,7 @@ describe('chat server', function() {
     var toSend = ['test message 2', 'test message 1'];
 
     client2.on('data', function(data) {
-      expect(data.toString()).to.eql(messages.pop());
+      expect(data.toString()).to.include(messages.pop());
       if (toSend.length) {
         client1.write(toSend.pop());
       } else {
